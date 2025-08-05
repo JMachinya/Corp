@@ -1,0 +1,81 @@
+```{python}
+from fredapi import Fred
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# STEP 1: Connect to FRED using your API key
+fred = Fred(api_key='a81fe200758f77f57e2e93b0324eea9b')  # Replace with your FRED API key
+
+# STEP 2: Define yield codes
+yield_codes = ['GS3M', 'GS1', 'GS5', 'GS10']
+
+# STEP 3: Fetch most recent available yields
+yields = {}
+for code in yield_codes:
+    series = fred.get_series_latest_release(code)
+    yields[code] = series.iloc[-1]  # Get most recent value
+
+# STEP 4: Simulated balance sheet with realistic sensitivity
+assets = pd.DataFrame({
+    'Type': ['Loans (5Y Fixed)', 'Bonds (10Y)', 'Cash Reserves (3M)'],
+    'Balance': [120, 80, 40],
+    'Yield Code': ['GS5', 'GS10', 'GS3M']
+})
+
+liabilities = pd.DataFrame({
+    'Type': ['Retail Deposits (Insensitive)', 'Short-term Borrowing', 'Corporate Bonds'],
+    'Balance': [130, 40, 20],
+    'Yield Code': ['GS1', 'GS3M', 'GS3M']  # less rate-sensitive base
+})
+# STEP 5: Map yields to balance sheet
+assets['Rate (%)'] = assets['Yield Code'].map(yields)
+assets['Interest Income'] = (assets['Balance'] * assets['Rate (%)']) / 100
+
+liabilities['Rate (%)'] = liabilities['Yield Code'].map(yields)
+liabilities['Interest Expense'] = (liabilities['Balance'] * liabilities['Rate (%)']) / 100
+
+# STEP 6: Calculate baseline NII
+baseline_nii = assets['Interest Income'].sum() - liabilities['Interest Expense'].sum()
+
+# STEP 7: Define scenario simulation function
+def simulate_nii_scenario(yields, assets, liabilities, shift):
+    shifted_yields = {k: v + shift for k, v in yields.items()}
+    a = assets.copy()
+    a['Rate (%)'] = a['Yield Code'].map(shifted_yields)
+    a['Interest Income'] = (a['Balance'] * a['Rate (%)']) / 100
+    l = liabilities.copy()
+    l['Rate (%)'] = l['Yield Code'].map(shifted_yields)
+    l['Interest Expense'] = (l['Balance'] * l['Rate (%)']) / 100
+    nii = a['Interest Income'].sum() - l['Interest Expense'].sum()
+    return round(nii, 2)
+
+# STEP 8: Define scenarios
+scenarios = {
+    "Baseline": 0,
+    "Adverse Scenario (-1%)": -1.0,
+    "Severely Adverse (-2.5%)": -2.5,
+    "Rate Hike Shock (+1%)": 1.0,
+    "Extreme Rate Hike (+2%)": 2.0
+}
+
+# STEP 9: Simulate NII under each scenario
+results = []
+for name, shift in scenarios.items():
+    nii = simulate_nii_scenario(yields, assets, liabilities, shift)
+    results.append((name, nii))
+
+# STEP 10: Plot results
+scenario_df = pd.DataFrame(results, columns=['Scenario', 'NII'])
+plt.figure(figsize=(10, 6))
+plt.bar(scenario_df['Scenario'], scenario_df['NII'], color='steelblue')
+plt.axhline(0, color='gray', linestyle='--')
+plt.title('Net Interest Income under Different Interest Rate Scenarios')
+plt.ylabel('NII ($ millions)')
+plt.xticks(rotation=15)
+plt.tight_layout()
+plt.show()
+
+
+```
+
+
