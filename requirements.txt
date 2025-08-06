@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 streamlit
 pandas
 numpy
 altair
 fredapi
+=======
+streamlit
+pandas
+numpy
+altair
+fredapi
+>>>>>>> 5fe0bbac50a99be3325b07263a6cf36c19bcb2d7

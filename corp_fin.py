@@ -8,9 +8,11 @@ import altair as alt
 # --- CONFIGURATION ---
 st.set_page_config(
     page_title="NII Stress Test & Regulatory Projections",
-    page_icon="📊",
+    page_icon="",
     layout="wide"
 )
+
+
 
 # --- FRED SETUP & HELPERS ---
 fred = Fred(api_key="a81fe200758f77f57e2e93b0324eea9b")
@@ -68,7 +70,7 @@ tab1, tab2 = st.tabs(["Stress‐Test Dashboard","CCAR / ICAAP Projections"])
 # ----------------------------------------
 with tab1:
     # --- SIDEBAR: Rate‐Shock Inputs ---
-    st.sidebar.header("⚙️ Rate‐Shock Inputs")
+    st.sidebar.header("Rate‐Shock Inputs")
     bps_shift = st.sidebar.slider("Custom Rate Shift (bps)", -300, 300, 0, step=25) / 10000
     scenario_name = st.sidebar.selectbox(
         "Choose Rate‐Shock Scenario",
@@ -77,7 +79,7 @@ with tab1:
     base_shift = bps_shift if scenario_name=='Custom' else preset[scenario_name]
 
     # --- SIDEBAR: Regulatory CCAR/ICAAP ---
-    st.sidebar.header("⚖️ Regulatory Stress Scenario")
+    st.sidebar.header("Regulatory Stress Scenario")
     macro_choice = st.sidebar.selectbox("Pick CCAR/ICAAP Scenario", list(macro_scenarios.keys()))
     if macro_choice == "Baseline":
         shifts_map = {c: base_shift for c in yield_codes}
@@ -89,7 +91,7 @@ with tab1:
             st.write("• " + line)
 
     # --- SIDEBAR: Show Live Yields ---
-    st.sidebar.header("📈 Current Yields")
+    st.sidebar.header("Current Yields")
     for code,label in yield_labels.items():
         st.sidebar.metric(label, f"{yields_current[code]*100:.2f}%")
 
@@ -151,7 +153,12 @@ with tab1:
     stressed_nii = a_calc['Income'].sum() - l_calc['Expense'].sum()
 
     # --- MAIN LAYOUT ---
-    st.title("📊 NII Stress Test & P&L Explain")
+    st.title("NII Stress Test & P&L Explain")
+    st.markdown(
+        "📈 **Note:** This dashboard pulls live yield data from the U.S. Treasury website via the FRED API to power stress test and capital planning simulations as of today."
+    )
+    st.caption(f"Data last pulled: {datetime.date.today().strftime('%B %d, %Y')}")
+
     st.markdown(f"**Rate‐Shock:** {scenario_name} | **Regulatory:** {macro_choice}")
 
     # top metrics
@@ -176,7 +183,7 @@ with tab1:
         x='Scenario', y='NII',
         color=alt.condition(alt.datum.NII>0, alt.value('green'), alt.value('red'))
     )
-    st.subheader("📉 Rate‐Shock Outcomes")
+    st.subheader("Rate‐Shock Outcomes")
     st.altair_chart(chart_rs, use_container_width=True)
 
     # Regulatory Stress Outcomes
@@ -190,11 +197,11 @@ with tab1:
         x='Scenario', y='NII',
         color=alt.condition(alt.datum.NII>0, alt.value('green'), alt.value('red'))
     )
-    st.subheader("📉 Regulatory Stress Outcomes")
+    st.subheader("Regulatory Stress Outcomes")
     st.altair_chart(chart_ms, use_container_width=True)
 
     # Historical Yields
-    st.subheader("📈 Historical Yields (5 Years)")
+    st.subheader("Historical Yields (5 Years)")
     hist = get_historical(yield_codes, datetime.date.today() - datetime.timedelta(days=5*365))
     df_hist = hist.reset_index().rename(columns={'index':'Date'})
     line = alt.Chart(df_hist).transform_fold(
@@ -209,7 +216,7 @@ with tab1:
     st.altair_chart(line, use_container_width=True)
 
     # NII Waterfall
-    st.subheader("📉 NII Waterfall")
+    st.subheader("NII Waterfall")
     balances = {'3M':cash,'1Y':deposits,'5Y':loans,'10Y':bonds}
     deltas, b0_sum, b1_sum = [], 0.0, 0.0
     for c,label in yield_labels.items():
@@ -228,77 +235,8 @@ with tab1:
     )
     st.altair_chart(waterfall1, use_container_width=True)
 
-    # P&L Explain Waterfall
-    # build sheets
-    bu_map = {'Loans':'Corporate','Bonds':'Corporate','Cash':'Corporate',
-              'Deposits':'Retail','Short Borrow':'Corporate','Corp Bonds':'Corporate'}
-    def make_sheet(b0,b1):
-        return pd.DataFrame([
-            {'Type':'Loans','B0':b0[0],'B1':b1[0],'Code':'GS5','BU':bu_map['Loans']},
-            {'Type':'Bonds','B0':b0[1],'B1':b1[1],'Code':'GS10','BU':bu_map['Bonds']},
-            {'Type':'Cash','B0':b0[2],'B1':b1[2],'Code':'GS3M','BU':bu_map['Cash']},
-            {'Type':'Deposits','B0':b0[3],'B1':b1[3],'Code':'GS1','BU':bu_map['Deposits']},
-            {'Type':'Short Borrow','B0':b0[4],'B1':b1[4],'Code':'GS3M','BU':bu_map['Short Borrow']},
-            {'Type':'Corp Bonds','B0':b0[5],'B1':b1[5],'Code':'GS3M','BU':bu_map['Corp Bonds']}
-        ])
-    start_df = make_sheet(
-        [loans_start,bonds_start,cash_start,deposits_start,borrow_start,corp_start],
-        [loans_start,bonds_start,cash_start,deposits_start,borrow_start,corp_start]
-    )
-    end_df   = make_sheet(
-        [loans_end,bonds_end,cash_end,deposits_end,borrow_end,corp_end],
-        [loans_end,bonds_end,cash_end,deposits_end,borrow_end,corp_end]
-    )
-    if bu_choice != "All":
-        start_df = start_df[start_df['BU']==bu_choice]
-        end_df   = end_df[end_df['BU']==bu_choice]
-
-    # get r0/r1 from historical
-    hist2 = get_historical(yield_codes, start_date)
-    hist2 = hist2[hist2.index <= pd.to_datetime(end_date)]
-    fy, ly = hist2.iloc[0].to_dict(), hist2.iloc[-1].to_dict()
-    r0_map = {c: fy[yield_labels[c]] for c in yield_codes}
-    r1_map = {c: ly[yield_labels[c]] for c in yield_codes}
-
-    a0 = start_df[start_df['Type'].isin(['Loans','Bonds','Cash'])]
-    a1 = end_df[end_df['Type'].isin(['Loans','Bonds','Cash'])]
-    l0 = start_df[start_df['Type'].isin(['Deposits','Short Borrow','Corp Bonds'])]
-    l1 = end_df[end_df['Type'].isin(['Deposits','Short Borrow','Corp Bonds'])]
-
-    # compute variances
-    rate_var   = sum(a0['B0']*(r1_map[c]-r0_map[c]) for c in a0['Code']) \
-               - sum(l0['B0']*(r1_map[c]-r0_map[c]) for c in l0['Code'])
-    vol_var    = sum((b1-b0)*r0_map[c] for b0,b1,c in zip(a0['B0'],a1['B1'],a0['Code'])) \
-               - sum((b1-b0)*r0_map[c] for b0,b1,c in zip(l0['B0'],l1['B1'],l0['Code']))
-    mix_var    = sum((b1-b0)*(r1_map[c]-r0_map[c]) for b0,b1,c in zip(a0['B0'],a1['B1'],a0['Code'])) \
-               - sum((b1-b0)*(r1_map[c]-r0_map[c]) for b0,b1,c in zip(l0['B0'],l1['B1'],l0['Code']))
-    nii0 = sum(a0['B0']*r0_map[c] for c in a0['Code']) - sum(l0['B0']*r0_map[c] for c in l0['Code'])
-    nii1 = sum(a1['B1']*r1_map[c] for c in a1['Code']) - sum(l1['B1']*r1_map[c] for c in l1['Code'])
-
-    wf2 = pd.DataFrame([
-        {'Step':'Starting NII',    'ΔNII': nii0},
-        {'Step':'Rate Variance',   'ΔNII': rate_var},
-        {'Step':'Volume Variance', 'ΔNII': vol_var},
-        {'Step':'Mix Variance',    'ΔNII': mix_var},
-        {'Step':'Ending NII',      'ΔNII': nii1},
-    ])
-    wf2['Start'] = wf2['ΔNII'].cumsum().shift(fill_value=0)
-    wf2['End']   = wf2['Start'] + wf2['ΔNII']
-
-    waterfall2 = alt.Chart(wf2).mark_bar().encode(
-        x='Step:N', y='End:Q', y2='Start:Q',
-        color=alt.condition(alt.datum.ΔNII>0, alt.value('green'), alt.value('red')),
-        tooltip=['Step','ΔNII']
-    ).properties(width=800,height=400)
-
-    st.subheader("📈 P&L “Explain” Waterfall & Driver Analysis")
-    st.altair_chart(waterfall2, use_container_width=True)
-    st.caption(f"P&L Explain for {bu_choice} ({start_date} → {end_date})")
-    st.markdown("---")
-    st.caption("© 2025 NII Dashboard | Powered by FRED")
-
 # --- Asset‐Liability Gap & Duration Analysis ---
-    st.subheader("📊 ALM Gap & Duration & DV01 Analysis")
+    st.subheader("ALM Gap & Duration & DV01 Analysis")
 
     # 1) Map each balance‐sheet row into tenor buckets
     tenor_map = {
@@ -372,7 +310,7 @@ with tab1:
 # Tab 2: CCAR / ICAAP Projections
 # ----------------------------------------
 with tab2:
-    st.header("🔮 CCAR / ICAAP Projections")
+    st.header(" CCAR / ICAAP Projections")
 
     # 1) Projection Type & Horizon
     proj_type = st.selectbox(
